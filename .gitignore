@@ -1,0 +1,25 @@
+# Large or generated - never commit
+models/
+output/
+*.mp4
+*.onnx
+*.onnx.data
+*.pt
+
+# Secrets
+.env
+.env.*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.sqlite
+*.db
+
+# Personal context for Claude Code - never commit
+CLAUDE.local.md
+
+# Claude Code local settings
+.claude/settings.local.json

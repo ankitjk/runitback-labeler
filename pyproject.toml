@@ -1,0 +1,20 @@
+[project]
+name = "runitback-labeler"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=1.2.24",
+    "mcp>=1.30,<2",
+    "numpy>=2.5.5",
+    "onnxruntime>=1.32.0",
+    "opencv-python-headless>=5.1.0.95",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
