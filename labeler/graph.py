@@ -2,20 +2,26 @@
 
     predict -> next_segment -+-> accept ----------------------+
                     ^        +-> llm_opinion -+-> accept -----+
+                    |        |                +-> human ------+   (pauses the run)
                     |        |                +-> defer ------+
                     +--------|----------------------------------+
                              +-> save_draft -> END
 
 A segment the model can be trusted with is accepted. Any other goes to the
-first-opinion LLM: if it agrees with the model the segment is accepted, and if
-not it is deferred (the human it should go to arrives in a later step).
+first-opinion LLM. If it agrees with the model the segment is accepted. If
+not, the run pauses and a person is asked. Once the question cap is reached,
+such segments are deferred: written to the draft marked `needs_review`.
 """
 
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 
 from labeler import config, routing
+from labeler.classes import CLASSES
+
+SKIP = "skip"
 
 # Fields copied from the workflow's segment into the draft, when present.
 DRAFT_EXTRA_FIELDS = ("needs_review", "model_label", "mean_confidence", "min_confidence", "llm_label", "llm_reason")
@@ -35,6 +41,22 @@ def frame_time(segment: dict) -> float:
     return round((segment["start_sec"] + segment["end_sec"]) / 2, 3)
 
 
+def human_choice(text: str, segment: dict) -> str | None:
+    """Turn what the person typed into a class, SKIP, or None if it is not a valid answer.
+
+    "1" is the model's label, "2" the LLM's (when it gave one), "s" skips;
+    anything else must be the exact name of one of the 11 classes.
+    """
+    text = str(text).strip().lower()
+    if text == "1":
+        return segment["model_label"]
+    if text == "2":
+        return segment.get("llm_label")  # None if the LLM gave no class
+    if text in ("s", SKIP):
+        return SKIP
+    return text if text in CLASSES else None
+
+
 def _with_current_updated(state: State, **changes) -> dict:
     """Return a state update that changes only the current segment."""
     segments = list(state["segments"])
@@ -42,13 +64,17 @@ def _with_current_updated(state: State, **changes) -> dict:
     return {"segments": segments}
 
 
-def build_graph(client, llm=None, threshold: float | None = None, checkpointer=None):
+def build_graph(client, llm=None, threshold: float | None = None, checkpointer=None, max_questions: int | None = None):
     """Build the workflow.
 
     `client` is anything with the MCP tool methods. `llm` is anything with
     `label_frame(video_id, t_sec, get_jpeg)`; without one, unsure segments are deferred.
+    Asking a person needs a `checkpointer`: it holds the state while the run is paused.
     """
     threshold = config.CONFIDENCE_THRESHOLD if threshold is None else threshold
+    max_questions = config.MAX_QUESTIONS if max_questions is None else max_questions
+    if checkpointer is None:
+        max_questions = 0  # a run that cannot pause cannot ask, so everything for the human is deferred
 
     async def predict(state: State) -> dict:
         result = await client.predict_segments(state["video_id"], state["game_number"])
@@ -87,11 +113,34 @@ def build_graph(client, llm=None, threshold: float | None = None, checkpointer=N
 
     def route_llm(state: State) -> str:
         segment = state["segments"][state["cursor"]]
-        decision = routing.after_llm(
-            segment, state["questions_asked"], config.MAX_QUESTIONS, config.USE_CONTEXT_AGENT
-        )
-        # The human and the context agent are not built yet, so their segments are deferred.
-        return "accept" if decision == "accept" else "defer"
+        decision = routing.after_llm(segment, state["questions_asked"], max_questions, config.USE_CONTEXT_AGENT)
+        # The context agent is not built yet, so its segments are deferred.
+        return "defer" if decision == "context" else decision
+
+    def human(state: State) -> dict:
+        """Pause the run and ask a person. Nothing may happen before interrupt():
+        when the run resumes, this function starts again from its first line."""
+        segment = state["segments"][state["cursor"]]
+        answer = interrupt({
+            "video_id": state["video_id"],
+            "t_sec": frame_time(segment),
+            "start_sec": segment["start_sec"],
+            "end_sec": segment["end_sec"],
+            "model_label": segment["model_label"],
+            "min_confidence": segment["min_confidence"],
+            "llm_label": segment.get("llm_label"),
+            "llm_zoom": segment.get("llm_zoom", False),
+            "llm_reason": segment.get("llm_reason", ""),
+            "question_number": state["questions_asked"] + 1,
+            "max_questions": max_questions,
+        })
+        choice = human_choice(answer, segment)
+        if choice is None:
+            raise ValueError(f"{answer!r} is not a valid answer for this segment")
+        asked = {"questions_asked": state["questions_asked"] + 1}
+        if choice == SKIP:
+            return {**defer(state), **asked}
+        return {**_with_current_updated(state, final_label=choice, source="human"), **asked}
 
     def accept(state: State) -> dict:
         # Reached when the model is trusted alone, or when the LLM agrees with it.
@@ -124,6 +173,7 @@ def build_graph(client, llm=None, threshold: float | None = None, checkpointer=N
     graph.add_node("predict", predict)
     graph.add_node("next_segment", next_segment)
     graph.add_node("llm_opinion", llm_opinion)
+    graph.add_node("human", human)
     graph.add_node("accept", accept)
     graph.add_node("defer", defer)
     graph.add_node("save_draft", save_draft)
@@ -131,7 +181,8 @@ def build_graph(client, llm=None, threshold: float | None = None, checkpointer=N
     graph.add_edge(START, "predict")
     graph.add_edge("predict", "next_segment")
     graph.add_conditional_edges("next_segment", route, ["accept", "llm_opinion", "defer", "save_draft"])
-    graph.add_conditional_edges("llm_opinion", route_llm, ["accept", "defer"])
+    graph.add_conditional_edges("llm_opinion", route_llm, ["accept", "human", "defer"])
+    graph.add_edge("human", "next_segment")
     graph.add_edge("accept", "next_segment")
     graph.add_edge("defer", "next_segment")
     graph.add_edge("save_draft", END)

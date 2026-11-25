@@ -122,3 +122,83 @@ def test_a_deferred_segment_can_carry_the_llm_label_and_says_so(monkeypatch):
     # The LLM gave no usable class: the model's label stays.
     assert (client.saved[1]["class"], client.saved[1]["source"], client.saved[1]["needs_review"]) == ("one_airborne", "model", True)
 
+
+# --- the human step ---
+
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
+
+from labeler.graph import SKIP, human_choice
+
+RUN = {"recursion_limit": 100, "configurable": {"thread_id": "test"}}
+
+
+def disputed_run(monkeypatch, n_segments, max_questions):
+    """A graph where every segment is a model/LLM disagreement, paused at its first question."""
+    monkeypatch.setattr(config, "DEFERRED_LABEL", "llm")
+    client = FakeClientWithFrames([model_segment(i, "one_airborne", 0.3) for i in range(n_segments)])
+    llm = FakeLLM({i + 0.5: "both_airborne" for i in range(n_segments)})
+    graph = build_graph(client, llm=llm, threshold=0.6, checkpointer=InMemorySaver(), max_questions=max_questions)
+    state = asyncio.run(graph.ainvoke({"video_id": "XUkRx6CpL04", "game_number": 3}, config=RUN))
+    return graph, client, state
+
+
+def test_a_disagreement_pauses_the_run_with_a_question(monkeypatch):
+    graph, client, state = disputed_run(monkeypatch, 1, max_questions=5)
+    question = state["__interrupt__"][0].value
+    assert question["model_label"] == "one_airborne" and question["llm_label"] == "both_airborne"
+    assert question["t_sec"] == 0.5 and question["question_number"] == 1
+    assert client.saved is None  # nothing is written while the run is paused
+
+
+def test_the_answer_resumes_the_run_and_is_recorded_as_human(monkeypatch):
+    graph, client, state = disputed_run(monkeypatch, 2, max_questions=5)
+    state = asyncio.run(graph.ainvoke(Command(resume="2"), config=RUN))             # take the LLM's label
+    state = asyncio.run(graph.ainvoke(Command(resume="one_offstage"), config=RUN))  # type a third class
+    assert "__interrupt__" not in state
+    assert [(s["class"], s["source"]) for s in client.saved] == [("both_airborne", "human"), ("one_offstage", "human")]
+    assert all("needs_review" not in s for s in client.saved)
+    assert state["questions_asked"] == 2
+
+
+def test_asking_stops_at_the_cap_and_the_rest_are_deferred(monkeypatch):
+    graph, client, state = disputed_run(monkeypatch, 3, max_questions=1)
+    state = asyncio.run(graph.ainvoke(Command(resume="1"), config=RUN))
+    assert "__interrupt__" not in state  # one question only
+    assert [s["source"] for s in client.saved] == ["human", "llm", "llm"]
+    assert [s.get("needs_review", False) for s in client.saved] == [False, True, True]
+
+
+def test_a_skipped_question_is_deferred_and_still_counts(monkeypatch):
+    graph, client, state = disputed_run(monkeypatch, 1, max_questions=5)
+    state = asyncio.run(graph.ainvoke(Command(resume="s"), config=RUN))
+    assert client.saved[0]["needs_review"] is True and client.saved[0]["source"] == "llm"
+    assert state["questions_asked"] == 1
+
+
+def test_an_answer_that_is_not_a_class_is_refused_by_the_node(monkeypatch):
+    import pytest
+
+    graph, client, state = disputed_run(monkeypatch, 1, max_questions=5)
+    with pytest.raises(ValueError):
+        asyncio.run(graph.ainvoke(Command(resume="finishing_blow"), config=RUN))
+    assert client.saved is None
+
+
+def test_without_a_checkpointer_nobody_is_asked(monkeypatch):
+    monkeypatch.setattr(config, "DEFERRED_LABEL", "llm")
+    client = FakeClientWithFrames([model_segment(0, "one_airborne", 0.3)])
+    graph = build_graph(client, llm=FakeLLM({0.5: "both_airborne"}), threshold=0.6)
+    state = asyncio.run(graph.ainvoke({"video_id": "XUkRx6CpL04", "game_number": 3}, config={"recursion_limit": 100}))
+    assert "__interrupt__" not in state and client.saved[0]["needs_review"] is True
+
+
+def test_human_choice():
+    segment = {"model_label": "one_airborne", "llm_label": "both_airborne"}
+    assert human_choice("1", segment) == "one_airborne"
+    assert human_choice(" 2 ", segment) == "both_airborne"
+    assert human_choice("Respawning", segment) == "respawning"
+    assert human_choice("s", segment) == SKIP
+    assert human_choice("finishing_blow", segment) is None
+    assert human_choice("3", segment) is None
+    assert human_choice("2", {"model_label": "one_airborne", "llm_label": None}) is None

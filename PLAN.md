@@ -102,10 +102,12 @@ action (which frame to look at) in a loop. Everything around it is fixed.
    be turned off if its measured error rate is too high.
 10. **Question cap.** After `MAX_QUESTIONS` human questions in a run, further
    segments bound for the human are *deferred*: written to the draft with
-   `needs_review: true`. They start with the model's label (`source: model`).
-   The evaluation measures whether the model or the first LLM is right more
-   often on disagreements; if the LLM is, switch `DEFERRED_LABEL` to `llm`
-   (`source: llm`). Deferred segments count as human work, never as auto-accepted.
+   `needs_review: true`. They take the LLM's label when it gave one
+   (`source: llm`), otherwise the model's (`source: model`). This is the
+   `DEFERRED_LABEL` setting, chosen from the evaluation: on disagreements the
+   LLM is right far more often than the model (see Results). A question the
+   person skips is deferred the same way. Deferred segments count as human
+   work, never as auto-accepted.
 11. **Bounds tolerance 0.05 s.** The ground-truth file's own first game-3 label
     starts at 437.1 s while the game starts at 437.1167 s, so a strict bounds
     check would reject real human labels.
@@ -125,7 +127,8 @@ action (which frame to look at) in a loop. Everything around it is fixed.
     only "busy" that evening. JSON output with a fixed answer shape works on
     every model that answered. Tool calls are still to be tested in step 7.
     Free-tier content is used by Google to improve its products. Answers are
-    cached per model, so changing model needs no code change.
+    cached per model, so changing model needs no code change. The limits and
+    "busy" replies above were observed during the runs, not recorded in a file.
 
 ## Layout
 
@@ -404,7 +407,9 @@ What this says:
 - Whether the zoom flags are right was not measured (the human labels have no
   zoom class).
 - The hydrogen run made 213 calls and used 476,055 input tokens and 273,263
-  output tokens (which includes the model's thinking).
+  output tokens (which includes the model's thinking). These counts are from
+  the run's printed output, not from a saved file; 5 of the 218 answers were
+  already cached, so a full game uses slightly more.
 
 ## Cut lines (if time runs short)
 
@@ -424,6 +429,15 @@ What this says:
   `source` and the other extra fields. The fix belongs in RunItBack
   (`docs/DRAFT_FORMAT.md` lists what is needed). Until then, human corrections
   happen in this pipeline's terminal review.
+- **A second run on the same game is refused once a person has answered.**
+  The save check will not let a later run change or drop a `source: human`
+  segment, and a new run does not yet read the earlier answers back in. The
+  refusal comes at the end, after the new run's questions have been asked, so
+  those answers are lost. To run again, move the old draft aside first. Next step: a tool to load a
+  draft, so a run reuses the answers already given and asks only new questions.
+- **The human sees one question at a time in the terminal**, with the frame
+  saved to `output/review/` to open. The paused state is held in memory, so
+  quitting mid-run loses the answers given so far.
 - One video, one unseen game. Every result is from game 3 alone.
 - The first LLM sees one frame per segment. Only the context agent looks at
   neighbouring frames, and only for disputed segments, up to 4 frames.

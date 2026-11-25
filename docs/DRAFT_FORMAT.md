@@ -36,8 +36,8 @@ segment:
          "llm_label": "one_offstage",
          "llm_reason": "One player is below the stage edge, not holding the ledge"},
 
-        {"start_sec": 530.0, "end_sec": 530.5, "class": "one_airborne",
-         "source": "model", "needs_review": true, "model_label": "one_airborne",
+        {"start_sec": 530.0, "end_sec": 530.5, "class": "both_airborne",
+         "source": "llm", "needs_review": true, "model_label": "one_airborne",
          "mean_confidence": 0.38, "min_confidence": 0.38,
          "llm_label": "both_airborne", "llm_reason": "Both players are off the ground"}
       ]
@@ -60,7 +60,7 @@ segment:
 | Field | Meaning |
 |---|---|
 | `source` | Who decided `class`: `model` (alone, or agreeing with the first LLM), `llm` (the context agent settled a disagreement, or a deferred segment given the LLM's label) or `human`. Always present |
-| `needs_review` | `true` if the segment was bound for the human but the question cap was reached. Absent otherwise |
+| `needs_review` | `true` if the segment was bound for the human but the question cap was reached, or the person skipped the question. Absent otherwise |
 | `model_label` | The small model's label |
 | `mean_confidence`, `min_confidence` | The model's average and lowest confidence over the segment's frames |
 | `llm_label`, `llm_reason` | The first LLM's class and its one-line reason. Present only if it was asked |
