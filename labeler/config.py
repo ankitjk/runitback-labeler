@@ -15,10 +15,17 @@ OUTPUT_DIR = Path(os.environ.get("LABELER_OUTPUT_DIR", REPO_ROOT / "output")).ex
 
 DEFAULT_VIDEO_ID = "XUkRx6CpL04"
 
+# The only games the model in MODEL_DIR never trained on. The evaluation
+# refuses any other game, because scores on training games are not real scores.
+UNSEEN_GAMES = frozenset({("XUkRx6CpL04", 3)})
+
 SAMPLE_FPS = 2
 
-# Placeholder. PLAN.md step 4 replaces it with a value chosen from the sweep.
-CONFIDENCE_THRESHOLD = 0.9
+# Chosen from the game-3 sweep at 2 fps (output/eval/, measured 2026-11-24): the lowest
+# threshold whose auto-accepted time is under 10% wrong. At 0.40 the model alone
+# is trusted for 11 of 218 segments (15.0% of game time, 5.4% of it wrong); at
+# 0.35 the error is 12.7%. Chosen and measured on the same game, so optimistic.
+CONFIDENCE_THRESHOLD = 0.40
 
 # The model predicts these about 5x too often, so its word alone is never enough.
 NEVER_AUTO_ACCEPT = frozenset({"respawning", "one_on_ledge"})

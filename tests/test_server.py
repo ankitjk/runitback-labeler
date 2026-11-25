@@ -108,3 +108,9 @@ def test_merge_joins_neighbouring_frames():
     assert [(s["class"], s["start_sec"], s["end_sec"], s["n_frames"]) for s in segments] == [
         ("both_grounded", 10.0, 11.0, 2), ("one_airborne", 11.0, 11.5, 1), ("both_grounded", 11.5, 12.0, 1)]
     assert segments[0]["mean_confidence"] == 0.7 and segments[0]["min_confidence"] == 0.5
+
+
+@pytest.mark.parametrize("bad", [0, 11, 2.5, "4", True])
+def test_predict_refuses_a_bad_sample_rate(world, bad):
+    with pytest.raises(ValueError, match="sample_fps"):
+        server.predict_segments(VIDEO_ID, 1, sample_fps=bad)

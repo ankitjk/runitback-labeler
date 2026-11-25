@@ -38,8 +38,11 @@ class LabelerClient:
             raise RuntimeError(f"{tool} failed: {result.content[0].text}")
         return result
 
-    async def predict_segments(self, video_id: str, game_number: int) -> dict:
-        result = await self._call("predict_segments", {"video_id": video_id, "game_number": game_number})
+    async def predict_segments(self, video_id: str, game_number: int, sample_fps: int | None = None) -> dict:
+        arguments = {"video_id": video_id, "game_number": game_number}
+        if sample_fps is not None:
+            arguments["sample_fps"] = sample_fps
+        result = await self._call("predict_segments", arguments)
         return json.loads(result.content[0].text)
 
     async def get_frame(self, video_id: str, t_sec: float, max_width: int = 1280) -> bytes:

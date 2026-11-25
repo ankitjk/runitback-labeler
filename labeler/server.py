@@ -126,17 +126,20 @@ def _write_json(path: Path, data: dict) -> None:
 
 
 @mcp.tool()
-def predict_segments(video_id: str, game_number: int) -> dict:
+def predict_segments(video_id: str, game_number: int, sample_fps: int | None = None) -> dict:
     """Label one game with the small scene model and return its segments.
 
-    Samples the game a few times per second, classifies each frame, and merges
-    neighbouring frames with the same class. Each segment has class, start_sec,
-    end_sec, mean_confidence, min_confidence and n_frames.
+    Samples the game a few times per second (sample_fps, 1-10; the project
+    default if omitted), classifies each frame, and merges neighbouring frames
+    with the same class. Each segment has class, start_sec, end_sec,
+    mean_confidence, min_confidence and n_frames.
     """
     video = _video_path(video_id)
     bounds = game_bounds(video_id, game_number)
+    fps = config.SAMPLE_FPS if sample_fps is None else sample_fps
+    if isinstance(fps, bool) or not isinstance(fps, int) or not 1 <= fps <= 10:
+        raise ValueError(f"sample_fps {fps!r} must be a whole number from 1 to 10")
     model = _get_model()
-    fps = config.SAMPLE_FPS
 
     cache_file = config.OUTPUT_DIR / "cache" / f"predictions_{video_id}_g{game_number}_{fps}fps_{model.fingerprint}.json"
     if cache_file.is_file():

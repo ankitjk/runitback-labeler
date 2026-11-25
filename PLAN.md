@@ -237,7 +237,8 @@ produces: it sets the LLM cost in step 5.
 `output/XUkRx6CpL04_g3_draft.json` and the GUI opens it.
 
 ### 4. Evaluation, model only (1 h) **Do not skip.**
-`evaluate.py` compares a draft with the human labels for game 3.
+`evaluate.py` compares the model's segments (what `predict_segments` returns)
+with the human labels for game 3. From step 5 it also scores the LLM's labels.
 
 - **How time is compared:** at every 0.1 s of the game (the GUI rounds labels
   to 0.1 s). Each point takes the human label and the draft label covering it.
@@ -247,7 +248,9 @@ produces: it sets the LLM cost in step 5.
 - **Segmentation ceiling:** the accuracy if every model segment were given its
   best possible single label. This is the most any second opinion can reach
   without changing segment boundaries.
-- **Threshold sweep** (0.50-0.95 in steps of 0.05, plus "accept everything"):
+- **Threshold sweep** (0.15-0.85 in steps of 0.05, plus "accept everything";
+  on game 3 no segment's lowest frame confidence reaches 0.85; the highest
+  is 0.80):
   for each threshold, how much game time is auto-accepted and how much of that
   is wrong. Uses the same `routing.py` functions as the graph.
 - Results go to `output/eval/` as JSON plus a Markdown table.
@@ -342,6 +345,26 @@ For an outside reader: the problem (the data bottleneck and the 48.3% held-out
 score), the diagram, who does what, the guardrails and why they are in code,
 the measured game-3 results with the two honesty notes, the limits (below),
 and next steps. Every number comes from a file in `output/eval/`.
+
+## Results so far (game 3, measured 2026-11-24)
+
+Full tables are in `output/eval/` (regenerate with
+`uv run python -m labeler.evaluate --game 3`, and `--fps 4` for the 4 fps
+report).
+
+- Model-only accuracy over all game time: **35.7%** (36.3% at the 419 sampled
+  frames; `test_metrics.json` reports 39.2% on 490 frames taken from inside
+  segments).
+- Segmentation ceiling at 2 frames per second: **81.3%**. At 4 frames per
+  second it is 88.3%, with 421 segments instead of 218 (twice the LLM calls).
+  Sampling stays at 2 for now; revisit after step 5 shows the LLM's cost.
+- Threshold **0.40**: the model alone is trusted for 11 of 218 segments, 15.0%
+  of game time, 5.4% of it wrong. 25 of those 31 seconds are the opening
+  non-gameplay screen. The other 207 segments need a second opinion. The
+  threshold was chosen and measured on the same game, so 5.4% is optimistic,
+  and it rests on 11 segments.
+- The never-auto-accept rule holds up: `one_on_ledge` predictions are right
+  9.0% of the time and `respawning` 20.6%.
 
 ## Cut lines (if time runs short)
 
