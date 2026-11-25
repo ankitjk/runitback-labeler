@@ -116,6 +116,13 @@ def test_sweep_with_llm_accepts_agreements_and_leaves_the_rest_for_the_human():
     assert row["accepted_model_alone"] == 2 and row["accepted_llm_agrees"] == 1 and row["left_for_human"] == 1
 
 
+def test_the_llm_report_names_the_model_and_the_prompt():
+    points, m = llm_case()
+    report = ev.llm_report(points, m, "some-model", "v1_abcd1234")
+    assert report["model_id"] == "some-model" and report["prompt_id"] == "v1_abcd1234"
+    assert "some-model, prompt v1_abcd1234" in "\n".join(ev._llm_markdown(report, 0.5, 0.8))
+
+
 def test_a_zoom_is_neither_an_agreement_nor_a_disagreement():
     points, m = llm_case()
     m = [{**s, "llm_zoom": True} for s in m]

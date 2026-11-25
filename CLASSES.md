@@ -8,6 +8,10 @@ Copied from `~/Projects/RunItBack/docs/SCENE_CLASSES.md` (the master) on
 2026-11-24. If they differ, the master wins: re-copy it. Only the last section
 ("For this labeller") is specific to this repo.
 
+One sentence was added here on 2026-11-25 and is **not yet in the master**: the
+last sentence of `non_gameplay` (entrance animations and the countdown before
+GO!). Add it to the master before re-copying, or it will be lost.
+
 ## Terms
 
 - **Within the stage**: within the horizontal bounds of the stage and its
@@ -35,7 +39,8 @@ stage and one above it -> `one_offstage`. Both under the stage ->
 
 **non_gameplay** - Loading screens, character select, stage select, results
 screens, and anything else that isn't actual gameplay between the two players.
-**Pauses are non_gameplay.**
+**Pauses are non_gameplay.** The entrance animations and the countdown before GO!
+are non_gameplay; gameplay starts when GO! appears.
 
 **both_grounded** - Both players are grounded, within the stage.
 

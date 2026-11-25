@@ -106,8 +106,10 @@ class GeminiLabeler:
         self.prompt = build_prompt()
         self._client = genai.Client(api_key=key)
         self._limit = asyncio.Semaphore(config.LLM_CONCURRENCY)
-        prompt_id = hashlib.sha256(self.prompt.encode()).hexdigest()[:8]
-        self._cache_dir = (cache_dir or config.OUTPUT_DIR / "cache" / "llm") / f"{self.model}_{PROMPT_VERSION}_{prompt_id}"
+        # Names the exact prompt. Cached answers and evaluation reports carry it, so results
+        # from one wording of the definitions are never mixed with, or replaced by, another's.
+        self.prompt_id = f"{PROMPT_VERSION}_{hashlib.sha256(self.prompt.encode()).hexdigest()[:8]}"
+        self._cache_dir = (cache_dir or config.OUTPUT_DIR / "cache" / "llm") / f"{self.model}_{self.prompt_id}"
         self.calls_made = 0
         self.tokens_in = 0   # what the new calls cost: tokens sent...
         self.tokens_out = 0  # ...and tokens received, including the model's thinking

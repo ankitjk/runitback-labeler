@@ -179,9 +179,10 @@ def sweep_with_llm(points: list[dict], segments: list[dict], thresholds: list[fl
     return rows
 
 
-def llm_report(points: list[dict], segments: list[dict], model_id: str) -> dict:
+def llm_report(points: list[dict], segments: list[dict], model_id: str, prompt_id: str) -> dict:
     return {
         "model_id": model_id,
+        "prompt_id": prompt_id,
         "accuracy": llm_accuracy(points, segments),
         "zoom_segments": sum(bool(s.get("llm_zoom")) for s in segments),
         "failed_check_segments": sum(s.get("llm_error") is not None for s in segments),
@@ -259,7 +260,7 @@ def _llm_markdown(llm: dict, model_accuracy: float, ceiling: float) -> list[str]
     d = llm["disagreement"]
     lines = [
         "",
-        f"## With the first-opinion LLM ({llm['model_id']})",
+        f"## With the first-opinion LLM ({llm['model_id']}, prompt {llm['prompt_id']})",
         "",
         "The LLM was shown the middle frame of every segment, once. Its class is worked out by code "
         "from the player states it reports.",
@@ -333,7 +334,7 @@ async def evaluate(video_id: str, game_number: int, sample_fps: int | None = Non
         if llm is not None:
             segments = await ask_llm_about_all(client, llm, video_id, segments)
     points = build_points(truth, segments, prediction["start_sec"], prediction["end_sec"])
-    with_llm = {"llm": llm_report(points, segments, llm.model)} if llm is not None else {}
+    with_llm = {"llm": llm_report(points, segments, llm.model, llm.prompt_id)} if llm is not None else {}
     return {
         **with_llm,
         "video_id": video_id,
@@ -366,7 +367,9 @@ def main() -> int:
     markdown = to_markdown(report)
     out_dir = config.OUTPUT_DIR / "eval"
     out_dir.mkdir(parents=True, exist_ok=True)
-    kind = f"llm_{llm.model}" if llm is not None else "model_only"
+    # The prompt id is in the file name, so a run with changed definitions writes a new
+    # report beside the old one and never replaces it.
+    kind = f"llm_{llm.model}_{llm.prompt_id}" if llm is not None else "model_only"
     stem = f"{args.video}_g{args.game}_{report['sample_fps']}fps_{kind}"
     (out_dir / f"{stem}.json").write_text(json.dumps(report, indent=2))
     (out_dir / f"{stem}.md").write_text(markdown)

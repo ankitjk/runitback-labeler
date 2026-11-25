@@ -374,9 +374,15 @@ report).
 
 ### With the first-opinion LLM (measured 2026-11-24)
 
-Two models were measured on the same 218 segments. Reports:
-`output/eval/XUkRx6CpL04_g3_2fps_llm_<model>.md` (regenerate with
-`uv run python -m labeler.evaluate --game 3 --llm-model <model>`).
+Two models were measured on the same 218 segments, with the class definitions
+as they stood on 2026-11-24. One sentence was added to `non_gameplay` in
+`CLASSES.md` on 2026-11-25 (the countdown before GO!); the prompt is built from
+that file, so these numbers are from before that sentence and have not been
+re-measured with it. Reports:
+`output/eval/XUkRx6CpL04_g3_2fps_llm_<model>_v1_1ac4020f.md`. The last part
+of the name identifies the prompt, so a run with changed definitions writes a
+new report beside these and never replaces them
+(`uv run python -m labeler.evaluate --game 3 --llm-model <model>`).
 
 | Measure | `gemini-4-hydrogen` | `gemini-3.5-flash-lite` |
 |---|---|---|
