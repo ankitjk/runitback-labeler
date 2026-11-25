@@ -154,7 +154,7 @@ are training checkpoints, not needed here.
   `human`). This is the minimal audit trail.
 - **Secrets:** API keys come from environment variables only (macOS Keychain ->
   `~/.zprofile`). Never write a key into a file in this repo, including `.env`
-  if it could be committed. An earlier Gemini key leaked in RunItBack's git history.
+  if it could be committed. A key committed by mistake stays in git history for good.
 - **Never commit** videos, extracted frames, model files or `output/`. They are gitignored.
 - **Be honest about numbers.** Report measured results only, and say when
   something wasn't measured. This project will be shown publicly.

@@ -15,7 +15,7 @@ numbers below are small-sample results, not claims about other videos.
 
 ## The problem
 
-RunItBack, a separate project, classifies each moment of a match into
+[RunItBack](https://github.com/ankitjk/RunItBack), a separate project, classifies each moment of a match into
 one of 11 scenes (`both_grounded`, `one_offstage`, `respawning` and so on;
 definitions in [CLASSES.md](CLASSES.md)). Its bottleneck is labelled data:
 

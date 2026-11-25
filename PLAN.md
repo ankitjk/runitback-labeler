@@ -10,12 +10,11 @@ Plain-terms definitions of the LangGraph and MCP ideas used here are in
 `docs/CONCEPTS.md`. The draft file format and how it meets the labelling GUI
 are in `docs/DRAFT_FORMAT.md`.
 
-## Before starting (owner)
+## Before running (owner)
 
-- **Get a Gemini API key** (Google AI Studio) and export it as
-  `GEMINI_API_KEY` from `~/.zprofile`, read from the macOS Keychain. No key
-  variable is defined there today. Step 5 is blocked without one; steps 1-4
-  are not. It must be a new key (the old one was leaked and deleted).
+- **A Gemini API key** from Google AI Studio, exported as `GEMINI_API_KEY`
+  from `~/.zprofile`, which reads it from the macOS Keychain. The key itself
+  is never written to a file. Steps 1-4 run without one; the LLM steps need it.
 
 ## Architecture
 
