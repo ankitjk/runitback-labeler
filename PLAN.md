@@ -115,15 +115,17 @@ action (which frame to look at) in a loop. Everything around it is fixed.
     for the 0.5 s around it. Human segments are often shorter than that, so
     some boundaries will be off. The evaluation measures how much this costs
     (the "segmentation ceiling" below).
-14. **LLM provider: Google Gemini**, key in `GEMINI_API_KEY`. Both LLM steps
-    start on `gemini-4-hydrogen` (free tier; the Gemini 4 family is the one
-    Google's models page confirms takes image and video input). If its free
-    rate limit is too low for the first opinion, use `gemini-3.8-flash` there.
-    Tool calls and JSON output are not listed per model on Google's pages:
-    test both when building steps 5 and 7. Free-tier content is used by Google
-    to improve its products. Model ids are config values; the evaluation
-    decides whether a different model is worth it (`gemini-4-neon`, paid, led
-    Roboflow's vision benchmark in Nov 2026).
+14. **LLM provider: Google Gemini**, key in `GEMINI_API_KEY`. The first
+    opinion runs on **`gemini-4-hydrogen`**, on a paid tier. Measured on
+    2026-11-24: Google's free tier gives it 20 requests a day, and
+    `gemini-3.5-flash` the same, while one game needs about 200.
+    `gemini-3.5-flash-lite`, an older, lighter model, ran all 218 segments on
+    the free tier and is the free fallback (`--llm-model`); it is clearly
+    weaker (see Results). `gemini-3.8-flash` and `gemini-3.7-flash` answered
+    only "busy" that evening. JSON output with a fixed answer shape works on
+    every model that answered. Tool calls are still to be tested in step 7.
+    Free-tier content is used by Google to improve its products. Answers are
+    cached per model, so changing model needs no code change.
 
 ## Layout
 
@@ -137,7 +139,7 @@ labeler/
   inference.py   preprocessing + ONNX + class_mapping.json   (server only)
   server.py      the MCP server: 3 tools
   mcp_client.py  opens the server, wraps the 3 tool calls
-  llm.py         label_frame(jpeg) -> states + reason; answer cache
+  llm.py         label_frame() -> the LLM's class and reason; check_answer(); answer cache
   context_agent.py  the tool-calling loop and its limits (step 7)
   graph.py       state, nodes, build_graph()
   run.py         CLI: runs the graph, asks the human, resumes
@@ -268,8 +270,9 @@ Two honesty notes to carry into the README:
 `config.py` is set from the sweep, with the reason noted beside it.
 
 ### 5. LLM second opinion (1.5 h)
-- `llm.py`: `label_frame(jpeg) -> {gameplay, finishing_blow_zoom, state_a,
-  state_b, reason}`. The prompt includes the Terms and class definitions from
+- `llm.py`: `label_frame(video_id, t_sec, get_jpeg)` asks the LLM for
+  `{gameplay, finishing_blow_zoom, state_a, state_b, reason}`, and
+  `check_answer()` checks that answer in code and works out the class. The prompt includes the Terms and class definitions from
   `CLASSES.md`, read from the file at run time, not retyped. Provider and model
   id are config values; the key is read from an environment variable only.
 - The `llm_opinion` node gets the segment's middle frame through `get_frame`,
@@ -365,6 +368,43 @@ report).
   and it rests on 11 segments.
 - The never-auto-accept rule holds up: `one_on_ledge` predictions are right
   9.0% of the time and `respawning` 20.6%.
+
+### With the first-opinion LLM (measured 2026-11-24)
+
+Two models were measured on the same 218 segments. Reports:
+`output/eval/XUkRx6CpL04_g3_2fps_llm_<model>.md` (regenerate with
+`uv run python -m labeler.evaluate --game 3 --llm-model <model>`).
+
+| Measure | `gemini-4-hydrogen` | `gemini-3.5-flash-lite` |
+|---|---|---|
+| LLM-only accuracy, all game time (model alone: 35.7%; ceiling: 81.3%) | **69.2%** | 50.5% |
+| Answers that failed the code checks | 0 of 218 | 0 of 218 |
+| Segments flagged as a finishing-blow zoom | 5 | 17 |
+| Model and LLM agree: time, and share of it wrong | 84.1 s, 20.8% | 63.2 s, 22.6% |
+| ...of which `one_on_ledge` | 6.0 s, 61.7% wrong | 6.0 s, 61.7% wrong |
+| ...of which `respawning` | 11.0 s, 40.9% wrong | never agreed |
+| They disagree: time; LLM right / model right / neither | 120.0 s; 78.1 / 6.1 / 35.8 s | 133.4 s; 56.6 / 23.0 / 53.8 s |
+| At threshold 0.40: segments accepted without a human | 61 of 218 (11 model alone + 50 agreed) | 46 of 218 (11 + 35) |
+| ...share of game time accepted, and share of it wrong | 41.2%, 21.7% | 32.4%, 22.2% |
+| ...segments left for the human | 157 | 172 |
+
+What this says:
+
+- **The LLM is much better than the small model**, and `gemini-4-hydrogen` is
+  much better than `gemini-3.5-flash-lite`. On disagreements hydrogen matches
+  the human for 78.1 s against the model's 6.1 s, so `DEFERRED_LABEL` is `llm`.
+- **Agreement is a weak reason to accept.** About a fifth of the agreed time
+  is wrong with either LLM, and `one_on_ledge` and `respawning` are worse.
+  Without the LLM, 15.0% of time was accepted with 5.4% wrong; with it, 41.2%
+  with 21.7% wrong. Decision 7 (agree -> accept) should be revisited; nothing
+  has been changed yet.
+- Part of every error above is the segment boundaries, not the label: errors
+  are counted by time, and 18.7% of game time cannot be right with these
+  segments whatever label they get.
+- Whether the zoom flags are right was not measured (the human labels have no
+  zoom class).
+- The hydrogen run made 213 calls and used 476,055 input tokens and 273,263
+  output tokens (which includes the model's thinking).
 
 ## Cut lines (if time runs short)
 

@@ -29,8 +29,8 @@ label file, because it cannot write files at all: it can only ask
 instruction in an LLM prompt ("only use these 11 classes") is a request, and
 the LLM may not follow it. A check in code (`if cls not in CLASSES: refuse`)
 always runs. In this project every rule that matters is a check in code:
-`labeler/guardrails.py` for saving, and the validation of the LLM's answer in
-the `llm_opinion` node.
+`labeler/guardrails.py` for saving, and `check_answer` in `labeler/llm.py` for
+the LLM's answer.
 
 ## LangGraph
 

@@ -30,14 +30,25 @@ CONFIDENCE_THRESHOLD = 0.40
 # The model predicts these about 5x too often, so its word alone is never enough.
 NEVER_AUTO_ACCEPT = frozenset({"respawning", "one_on_ledge"})
 
+# The first-opinion LLM. The key is read from this environment variable and nowhere else.
+# Measured on game 3 (2026-11-24): gemini-4-hydrogen's labels match the human for
+# 69.2% of game time, gemini-3.5-flash-lite's for 50.5%. Hydrogen needs a paid
+# Google tier: the free tier gave it 20 requests a day, and one game needs about
+# 200. gemini-3.5-flash-lite ran a whole game on the free tier (--llm-model).
+LLM_MODEL = "gemini-4-hydrogen"
+LLM_API_KEY_ENV = "GEMINI_API_KEY"
+LLM_CONCURRENCY = 4  # calls in flight at once
+
 MAX_QUESTIONS = 10
 
 # The ground truth's own first game-3 label starts 0.017 s before the game does.
 BOUNDS_TOLERANCE_SEC = 0.05
 
 # Which label a segment gets when it was bound for the human but the question
-# cap was reached: "model" or "llm".
-DEFERRED_LABEL = "model"
+# cap was reached: "model" or "llm". Measured on game 3 with gemini-4-hydrogen:
+# where the two disagreed (120.0 s) the LLM matched the human for 78.1 s and the
+# model for 6.1 s, so the LLM's label is used when it gave one.
+DEFERRED_LABEL = "llm"
 
 USE_CONTEXT_AGENT = False
 CONTEXT_MAX_FRAMES = 4

@@ -7,6 +7,7 @@ from collections import Counter
 
 from labeler import config
 from labeler.graph import build_graph
+from labeler.llm import GeminiLabeler
 from labeler.mcp_client import LabelerClient
 
 # The graph loops once per segment, a few steps each. LangGraph stops a run
@@ -15,19 +16,29 @@ RECURSION_LIMIT = 10_000
 
 
 def describe(segment: dict) -> str:
-    if segment.get("needs_review"):
-        return "deferred (needs review)"
-    return f"accepted from {segment['source']}"
+    asked = "llm_error" in segment
+    if not segment.get("needs_review"):
+        return "accepted: model and LLM agree" if asked else "accepted: model alone"
+    if not asked:
+        return "deferred: no LLM was asked"
+    if segment["llm_zoom"]:
+        return "deferred: LLM saw a finishing-blow zoom"
+    if segment["llm_label"] is None:
+        return "deferred: LLM's answer failed the checks"
+    return "deferred: model and LLM disagree"
 
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description="Pre-label one game and write a draft label file.")
     parser.add_argument("--video", default=config.DEFAULT_VIDEO_ID)
     parser.add_argument("--game", type=int, required=True)
+    parser.add_argument("--llm-model", default=None, help="LLM model id (default: the project setting)")
+    parser.add_argument("--no-llm", action="store_true", help="skip the LLM; unsure segments are deferred")
     args = parser.parse_args()
 
+    llm = None if args.no_llm else GeminiLabeler(model=args.llm_model)
     async with LabelerClient() as client:
-        graph = build_graph(client)
+        graph = build_graph(client, llm=llm)
         state = await graph.ainvoke(
             {"video_id": args.video, "game_number": args.game},
             config={"recursion_limit": RECURSION_LIMIT},
@@ -43,6 +54,8 @@ async def main() -> int:
     for outcome, n in counts.most_common():
         print(f"  {outcome}: {n} segments, {seconds[outcome]:.1f} s ({seconds[outcome] / total_time:.0%} of the time)")
 
+    if llm is not None:
+        print(f"LLM ({llm.model}): {llm.calls_made} new calls ({llm.tokens_in} tokens in, {llm.tokens_out} out), the rest from the cache")
     result = state["save_result"]
     if not result["saved"]:
         print("Draft NOT saved:")
