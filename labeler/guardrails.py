@@ -5,6 +5,7 @@ unit-tested. `save_draft_labels` in server.py calls them and refuses to write
 if any rule is broken.
 """
 
+import hashlib
 import math
 import re
 from pathlib import Path
@@ -12,6 +13,7 @@ from pathlib import Path
 from labeler.classes import CLASSES, SOURCES
 
 VIDEO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}$")
+NAME_PATTERN = re.compile(r"[A-Za-z0-9._-]{0,100}")  # an LLM's name or a prompt id; may be empty
 
 REQUIRED_FIELDS = ("start_sec", "end_sec", "class", "source")
 OPTIONAL_FIELDS = (
@@ -31,6 +33,24 @@ def check_video_id(video_id: str) -> None:
     """A video id is 11 YouTube characters, so it can never be a file path."""
     if not isinstance(video_id, str) or not VIDEO_ID_PATTERN.fullmatch(video_id):
         raise ValueError(f"video_id {video_id!r} is not a valid id (11 letters, digits, '-' or '_')")
+
+
+def check_llm_names(llm_model: object, llm_prompt_id: object) -> list[str]:
+    """The LLM's name and prompt id go into the draft, so they must be plain names."""
+    errors = []
+    for name, value in (("llm_model", llm_model), ("llm_prompt_id", llm_prompt_id)):
+        if not isinstance(value, str) or not NAME_PATTERN.fullmatch(value):
+            errors.append(f"{name} {value!r} is not a valid name (letters, digits, '.', '_' or '-')")
+    return errors
+
+
+def model_file_sha256(model_dir: Path) -> str | None:
+    """The hash that identifies a scene model: SHA-256 of its file. None if the file is missing.
+
+    A model is known by this hash, never by its folder's name, which anyone can reuse.
+    """
+    model_file = Path(model_dir) / "scene_classifier.onnx"
+    return hashlib.sha256(model_file.read_bytes()).hexdigest() if model_file.is_file() else None
 
 
 def draft_path(output_dir: Path, video_id: str, game_number: int) -> Path:

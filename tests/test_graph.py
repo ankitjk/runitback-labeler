@@ -15,7 +15,8 @@ class FakeClient:
     async def predict_segments(self, video_id, game_number):
         return {"segments": self.segments}
 
-    async def save_draft_labels(self, video_id, game_number, segments):
+    async def save_draft_labels(self, video_id, game_number, segments, llm_model="", llm_prompt_id=""):
+        self.saved_with = (llm_model, llm_prompt_id)
         self.saved = segments
         return self.save_result
 
@@ -68,6 +69,9 @@ def test_many_segments_do_not_hit_the_step_limit():
 
 class FakeLLM:
     """Answers from a table keyed by frame time, and records which frames it was asked about."""
+
+    model = "fake-llm"
+    prompt_id = "v1_fake0000"
 
     def __init__(self, answers):
         self.answers = answers
@@ -202,3 +206,33 @@ def test_human_choice():
     assert human_choice("finishing_blow", segment) is None
     assert human_choice("3", segment) is None
     assert human_choice("2", {"model_label": "one_airborne", "llm_label": None}) is None
+
+
+def test_the_draft_is_saved_with_the_name_of_the_llm_that_was_used():
+    with_llm = FakeClientWithFrames([model_segment(1, "respawning", 0.9)])
+    asyncio.run(build_graph(with_llm, llm=FakeLLM({1.5: "respawning"})).ainvoke(
+        {"video_id": "XUkRx6CpL04", "game_number": 3}, config={"recursion_limit": 100}))
+    assert with_llm.saved_with == ("fake-llm", "v1_fake0000")
+
+    without = FakeClient([model_segment(1, "both_grounded", 0.9)])
+    asyncio.run(build_graph(without).ainvoke(
+        {"video_id": "XUkRx6CpL04", "game_number": 3}, config={"recursion_limit": 100}))
+    assert without.saved_with == ("", "")
+
+
+def test_a_model_with_no_measured_threshold_is_never_trusted_alone(monkeypatch):
+    confident = [model_segment(1, "both_grounded", 0.99)]
+
+    class ClientNamingItsModel(FakeClient):
+        async def predict_segments(self, video_id, game_number):
+            return {"segments": self.segments, "scene_model_sha256": "abc"}
+
+    def sources(client):
+        asyncio.run(build_graph(client).ainvoke(
+            {"video_id": "XUkRx6CpL04", "game_number": 3}, config={"recursion_limit": 100}))
+        return [(s["source"], s.get("needs_review")) for s in client.saved]
+
+    monkeypatch.setattr(config, "THRESHOLD_BY_MODEL", {"abc": 0.5})
+    assert sources(ClientNamingItsModel(confident)) == [("model", None)]
+    monkeypatch.setattr(config, "THRESHOLD_BY_MODEL", {"some other model": 0.5})
+    assert sources(ClientNamingItsModel(confident)) == [("model", True)]

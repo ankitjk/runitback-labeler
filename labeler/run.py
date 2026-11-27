@@ -97,7 +97,9 @@ async def main() -> int:
 
     segments = state["segments"]
     total_time = sum(s["end_sec"] - s["start_sec"] for s in segments)
-    print(f"\n{len(segments)} segments, {total_time:.1f} s of video (threshold {config.CONFIDENCE_THRESHOLD})")
+    threshold = state["threshold"]
+    threshold_text = f"threshold {threshold}" if threshold != float("inf") else "no threshold measured for this model"
+    print(f"\n{len(segments)} segments, {total_time:.1f} s of video ({threshold_text})")
     counts, seconds = Counter(), Counter()
     for s in segments:
         counts[describe(s)] += 1

@@ -176,11 +176,15 @@ What this shows:
 ## Running it
 
 It needs files that are not in this repo: the video, the hand labels (both in
-a RunItBack checkout) and the trained model (`models/heldout_g3/`).
+a RunItBack checkout) and the trained model (`models/heldout_g3/`, or any
+model folder named in `LABELER_MODEL_DIR`). Each draft records which model
+and which LLM prompt produced it. The 0.40 confidence threshold was measured
+for `heldout_g3` only: with any other model, nothing is accepted on the
+model's word alone until a threshold is measured for it.
 
 ```
 uv sync
-uv run pytest                                  # 120 tests, no video or key needed
+uv run pytest                                  # 131 tests, no video or key needed
 export GEMINI_API_KEY=...                      # from your keychain, not a file
 uv run python -m labeler.run --game 3          # label a game; asks up to 10 questions
 uv run python -m labeler.run --game 3 --no-llm --max-questions 0   # model only, nothing asked

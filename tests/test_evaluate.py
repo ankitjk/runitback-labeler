@@ -128,3 +128,39 @@ def test_a_zoom_is_neither_an_agreement_nor_a_disagreement():
     m = [{**s, "llm_zoom": True} for s in m]
     assert ev.agreement(points, m)[0]["sec"] == 0.0
     assert ev.disagreement(points, m)["sec"] == 0.0
+
+
+def model_folder(tmp_path, name, content=b"a model", run_record=None):
+    folder = tmp_path / name
+    folder.mkdir()
+    (folder / "scene_classifier.onnx").write_bytes(content)
+    if run_record is not None:
+        (folder / "run.json").write_text(run_record)
+    return folder
+
+
+def test_unseen_games_come_from_the_models_run_record(tmp_path):
+    model = model_folder(tmp_path, "some_run", run_record='{"split": {"test_games": ["VID_a:3", "VID_b:1"]}}')
+    assert ev.unseen_games(model) == {("VID_a", 3), ("VID_b", 1)}
+
+
+def test_a_model_listed_in_config_ignores_a_run_record_in_its_folder(tmp_path, monkeypatch):
+    # A file dropped into the folder must not be able to open up a training game.
+    model = model_folder(tmp_path, "listed", run_record='{"split": {"test_games": ["XUkRx6CpL04:1"]}}')
+    listed = {ev.model_file_sha256(model): frozenset({("XUkRx6CpL04", 3)})}
+    monkeypatch.setattr(ev.config, "UNSEEN_GAMES_BY_MODEL", listed)
+    assert ev.unseen_games(model) == {("XUkRx6CpL04", 3)}
+
+
+def test_a_folder_name_alone_earns_nothing(tmp_path):
+    assert ev.unseen_games(model_folder(tmp_path, "heldout_g3")) == frozenset()
+
+
+def test_an_unknown_model_has_no_unseen_games_so_nothing_is_scored(tmp_path, monkeypatch):
+    model = model_folder(tmp_path, "mystery")
+    assert ev.unseen_games(model) == frozenset()
+    assert ev.unseen_games(tmp_path / "no_such_folder") == frozenset()
+    monkeypatch.setattr(ev.config, "MODEL_DIR", model)
+    monkeypatch.setattr(ev.config, "MODEL_NAME", "mystery")
+    with pytest.raises(ValueError, match="not an unseen game"):
+        ev.load_truth("XUkRx6CpL04", 3)

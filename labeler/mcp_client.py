@@ -22,7 +22,11 @@ class LabelerClient:
             command=sys.executable,
             args=["-m", "labeler.server"],
             cwd=str(config.REPO_ROOT),
-            env={"RUNITBACK_ROOT": str(config.RUNITBACK_ROOT), "LABELER_OUTPUT_DIR": str(config.OUTPUT_DIR)},
+            env={
+                "RUNITBACK_ROOT": str(config.RUNITBACK_ROOT),
+                "LABELER_OUTPUT_DIR": str(config.OUTPUT_DIR),
+                "LABELER_MODEL_DIR": str(config.MODEL_DIR),
+            },
         )
         read, write = await self._stack.enter_async_context(stdio_client(server))
         self._session = await self._stack.enter_async_context(ClientSession(read, write))
@@ -49,8 +53,17 @@ class LabelerClient:
         result = await self._call("get_frame", {"video_id": video_id, "t_sec": t_sec, "max_width": max_width})
         return base64.b64decode(result.content[0].data)
 
-    async def save_draft_labels(self, video_id: str, game_number: int, segments: list[dict]) -> dict:
+    async def save_draft_labels(
+        self, video_id: str, game_number: int, segments: list[dict], llm_model: str = "", llm_prompt_id: str = ""
+    ) -> dict:
         result = await self._call(
-            "save_draft_labels", {"video_id": video_id, "game_number": game_number, "segments": segments}
+            "save_draft_labels",
+            {
+                "video_id": video_id,
+                "game_number": game_number,
+                "segments": segments,
+                "llm_model": llm_model,
+                "llm_prompt_id": llm_prompt_id,
+            },
         )
         return json.loads(result.content[0].text)

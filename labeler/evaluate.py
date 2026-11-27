@@ -11,23 +11,51 @@ import argparse
 import asyncio
 import json
 import math
+import re
 import sys
 from collections import Counter
+from pathlib import Path
 
 from labeler import config, routing
 from labeler.classes import CLASSES
 from labeler.graph import frame_time
+from labeler.guardrails import model_file_sha256
 from labeler.mcp_client import LabelerClient
 
 GRID_SEC = 0.1  # the labelling GUI rounds labels to 0.1 s
 SWEEP_THRESHOLDS = [0.0] + [round(0.15 + 0.05 * i, 2) for i in range(15)]  # 0, then 0.15 ... 0.85
 
 
+def unseen_games(model_dir: Path | None = None) -> frozenset:
+    """The (video, game) pairs the model in this folder never trained on.
+
+    The model is identified by the hash of its file. The table in config is
+    checked first, so a listed model cannot be given other games by a file
+    placed in its folder. Only an unlisted model is looked up in the run record
+    RunItBack writes beside it (run.json, held-out games as "VIDEO:GAME").
+    No model file, or a model in neither: no games, so nothing can be scored.
+    """
+    model_dir = Path(model_dir or config.MODEL_DIR)
+    sha = model_file_sha256(model_dir)
+    if sha is None:
+        return frozenset()
+    if sha in config.UNSEEN_GAMES_BY_MODEL:
+        return config.UNSEEN_GAMES_BY_MODEL[sha]
+    record = model_dir / "run.json"
+    if not record.exists():
+        return frozenset()
+    games = set()
+    for entry in json.loads(record.read_text())["split"]["test_games"]:
+        video, _, number = entry.rpartition(":")
+        games.add((video, int(number)))
+    return frozenset(games)
+
+
 def load_truth(video_id: str, game_number: int) -> list[dict]:
-    if (video_id, game_number) not in config.UNSEEN_GAMES:
+    if (video_id, game_number) not in unseen_games():
         raise ValueError(
-            f"game {game_number} of {video_id} is not an unseen game for this model; "
-            "scoring it would give a number that means nothing"
+            f"game {game_number} of {video_id} is not an unseen game for the model "
+            f"{config.MODEL_NAME}; scoring it would give a number that means nothing"
         )
     truth = json.loads((config.GROUND_TRUTH_DIR / f"{video_id}.json").read_text())
     for game in truth["games"]:
@@ -217,7 +245,8 @@ def to_markdown(report: dict) -> str:
         "",
         f"Compared every {GRID_SEC} s of the game with the human labels: "
         f"{report['labelled_sec']} s labelled, {report['segments']} model segments "
-        f"(sampled at {report['sample_fps']} frames per second).",
+        f"(sampled at {report['sample_fps']} frames per second). "
+        f"Scene model: {report.get('scene_model', 'not recorded')}.",
         "",
         "| Measure | Value |",
         "|---|---|",
@@ -239,8 +268,12 @@ def to_markdown(report: dict) -> str:
         "",
         f"A segment is accepted on the model's word if its lowest frame confidence is at or above "
         f"the threshold and its label is not one of: {never}. Those two classes always go for a "
-        f"second opinion, so even with no threshold not everything is accepted. The threshold was "
-        f"chosen on this same game, so the error at the chosen threshold is optimistic.",
+        f"second opinion, so even with no threshold not everything is accepted. "
+        + (
+            "The threshold for this model was chosen on this same game, so the error at the chosen threshold is optimistic."
+            if report.get("scene_model_sha256") in config.THRESHOLD_BY_MODEL
+            else "No threshold has been chosen for this model, so the pipeline accepts nothing on its word alone."
+        ),
         "",
         "| Threshold | Accepted segments | Sent for a second opinion | Coverage (share of time accepted) | Accepted (s) | Wrong (s) | Auto-accept error |",
         "|---|---|---|---|---|---|---|",
@@ -340,6 +373,7 @@ async def evaluate(video_id: str, game_number: int, sample_fps: int | None = Non
         "video_id": video_id,
         "game_number": game_number,
         "sample_fps": prediction["sample_fps"],
+        "scene_model_sha256": prediction.get("scene_model_sha256"),
         "segments": len(segments),
         "labelled_sec": round(len(points) * GRID_SEC, 1),
         "model_accuracy": accuracy(points),
@@ -363,14 +397,18 @@ def main() -> int:
     if args.llm or args.llm_model:
         from labeler.llm import GeminiLabeler
         llm = GeminiLabeler(model=args.llm_model)
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", config.MODEL_NAME):  # checked before any work or LLM call
+        raise ValueError(f"model folder name {config.MODEL_NAME!r} cannot be used in a file name")
     report = asyncio.run(evaluate(args.video, args.game, args.fps, llm))
+    report["scene_model"] = config.MODEL_NAME
     markdown = to_markdown(report)
     out_dir = config.OUTPUT_DIR / "eval"
     out_dir.mkdir(parents=True, exist_ok=True)
     # The prompt id is in the file name, so a run with changed definitions writes a new
     # report beside the old one and never replaces it.
+    # So is the scene model's name, so measuring a new model keeps the old model's reports.
     kind = f"llm_{llm.model}_{llm.prompt_id}" if llm is not None else "model_only"
-    stem = f"{args.video}_g{args.game}_{report['sample_fps']}fps_{kind}"
+    stem = f"{args.video}_g{args.game}_{report['sample_fps']}fps_{config.MODEL_NAME}_{kind}"
     (out_dir / f"{stem}.json").write_text(json.dumps(report, indent=2))
     (out_dir / f"{stem}.md").write_text(markdown)
     print(markdown)

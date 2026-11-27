@@ -13,6 +13,7 @@ not, the run pauses and a person is asked. Once the question cap is reached,
 such segments are deferred: written to the draft marked `needs_review`.
 """
 
+import math
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -33,6 +34,7 @@ class State(TypedDict, total=False):
     segments: list[dict]
     cursor: int  # index of the segment being handled
     questions_asked: int
+    threshold: float  # the confidence threshold used for this run's scene model
     save_result: dict
 
 
@@ -69,9 +71,9 @@ def build_graph(client, llm=None, threshold: float | None = None, checkpointer=N
 
     `client` is anything with the MCP tool methods. `llm` is anything with
     `label_frame(video_id, t_sec, get_jpeg)`; without one, unsure segments are deferred.
+    `threshold` overrides the one measured for the scene model; leave it out in real runs.
     Asking a person needs a `checkpointer`: it holds the state while the run is paused.
     """
-    threshold = config.CONFIDENCE_THRESHOLD if threshold is None else threshold
     max_questions = config.MAX_QUESTIONS if max_questions is None else max_questions
     if checkpointer is None:
         max_questions = 0  # a run that cannot pause cannot ask, so everything for the human is deferred
@@ -88,7 +90,12 @@ def build_graph(client, llm=None, threshold: float | None = None, checkpointer=N
             }
             for s in result["segments"]
         ]
-        return {"segments": segments, "cursor": -1, "questions_asked": 0}
+        # A threshold holds only for the model it was measured on. The server says which
+        # model it used; one with no measured threshold is never trusted on its word alone.
+        used = threshold
+        if used is None:
+            used = config.THRESHOLD_BY_MODEL.get(result.get("scene_model_sha256"), math.inf)
+        return {"segments": segments, "cursor": -1, "questions_asked": 0, "threshold": used}
 
     def next_segment(state: State) -> dict:
         return {"cursor": state["cursor"] + 1}
@@ -97,7 +104,7 @@ def build_graph(client, llm=None, threshold: float | None = None, checkpointer=N
         if state["cursor"] >= len(state["segments"]):
             return "save_draft"
         segment = state["segments"][state["cursor"]]
-        decision = routing.after_predict(segment, threshold, config.NEVER_AUTO_ACCEPT)
+        decision = routing.after_predict(segment, state["threshold"], config.NEVER_AUTO_ACCEPT)
         if decision == "accept":
             return "accept"
         return "llm_opinion" if llm is not None else "defer"
@@ -166,7 +173,13 @@ def build_graph(client, llm=None, threshold: float | None = None, checkpointer=N
             }
             entry.update({f: segment[f] for f in DRAFT_EXTRA_FIELDS if segment.get(f) not in (None, "")})
             draft_segments.append(entry)
-        result = await client.save_draft_labels(state["video_id"], state["game_number"], draft_segments)
+        result = await client.save_draft_labels(
+            state["video_id"],
+            state["game_number"],
+            draft_segments,
+            llm_model=getattr(llm, "model", "") or "",
+            llm_prompt_id=getattr(llm, "prompt_id", "") or "",
+        )
         return {"save_result": result}
 
     graph = StateGraph(State)

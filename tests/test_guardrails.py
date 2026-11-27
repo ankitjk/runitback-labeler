@@ -1,6 +1,6 @@
 import pytest
 
-from labeler.guardrails import check_video_id, draft_path, validate_segments
+from labeler.guardrails import check_llm_names, check_video_id, draft_path, validate_segments
 
 START, END, TOL = 100.0, 200.0, 0.05
 
@@ -131,3 +131,11 @@ def test_draft_path_refuses_a_link_that_leaves_output(tmp_path):
     (output / "XUkRx6CpL04_g3_draft.json").symlink_to(outside)
     with pytest.raises(ValueError):
         draft_path(output, "XUkRx6CpL04", 3)
+
+
+def test_llm_names_must_be_plain_names():
+    assert check_llm_names("", "") == []  # no LLM was used
+    assert check_llm_names("gemini-4-hydrogen", "v1_abcd1234") == []
+    assert len(check_llm_names("../../x", "v1_abcd1234")) == 1
+    assert len(check_llm_names("some-model", "a prompt id")) == 1
+    assert len(check_llm_names(None, 7)) == 2

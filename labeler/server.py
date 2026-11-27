@@ -13,7 +13,7 @@ import cv2
 from mcp.server.fastmcp import FastMCP, Image
 
 from labeler import config
-from labeler.guardrails import check_video_id, draft_path, validate_segments
+from labeler.guardrails import check_llm_names, check_video_id, draft_path, model_file_sha256, validate_segments
 from labeler.inference import SceneModel
 
 mcp = FastMCP("runitback-labeler", log_level="WARNING")
@@ -27,6 +27,14 @@ def _get_model() -> SceneModel:
     if _model is None:
         _model = SceneModel(config.MODEL_DIR)
     return _model
+
+
+def _scene_model_record() -> dict:
+    """Which scene model this server uses: its folder's name and the hash of its file.
+
+    The server writes this itself, so a caller cannot claim a different model.
+    """
+    return {"scene_model": config.MODEL_DIR.name, "scene_model_sha256": model_file_sha256(config.MODEL_DIR)}
 
 
 def _video_path(video_id: str) -> Path:
@@ -132,7 +140,8 @@ def predict_segments(video_id: str, game_number: int, sample_fps: int | None = N
     Samples the game a few times per second (sample_fps, 1-10; the project
     default if omitted), classifies each frame, and merges neighbouring frames
     with the same class. Each segment has class, start_sec, end_sec,
-    mean_confidence, min_confidence and n_frames.
+    mean_confidence, min_confidence and n_frames. The result also names the
+    scene model used (scene_model, scene_model_sha256).
     """
     video = _video_path(video_id)
     bounds = game_bounds(video_id, game_number)
@@ -143,7 +152,7 @@ def predict_segments(video_id: str, game_number: int, sample_fps: int | None = N
 
     cache_file = config.OUTPUT_DIR / "cache" / f"predictions_{video_id}_g{game_number}_{fps}fps_{model.fingerprint}.json"
     if cache_file.is_file():
-        return json.loads(cache_file.read_text())
+        return {**json.loads(cache_file.read_text()), **_scene_model_record()}
 
     times = _sample_times(bounds["start_sec"], bounds["end_sec"], fps)
     predictions, batch = [], []
@@ -168,7 +177,7 @@ def predict_segments(video_id: str, game_number: int, sample_fps: int | None = N
         "segments": _merge(times, predictions, bounds["start_sec"], bounds["end_sec"], fps),
     }
     _write_json(cache_file, result)
-    return result
+    return {**result, **_scene_model_record()}
 
 
 @mcp.tool()
@@ -199,11 +208,15 @@ def get_frame(video_id: str, t_sec: float, max_width: int = 1280) -> Image:
 
 
 @mcp.tool()
-def save_draft_labels(video_id: str, game_number: int, segments: list[dict]) -> dict:
+def save_draft_labels(
+    video_id: str, game_number: int, segments: list[dict], llm_model: str = "", llm_prompt_id: str = ""
+) -> dict:
     """Check a game's draft labels and, only if every check passes, write them under output/.
 
     Each segment needs start_sec, end_sec, class (one of the 11 scene classes)
-    and source (model, llm or human). Returns {"saved": true, "path": ...} or
+    and source (model, llm or human). llm_model and llm_prompt_id name the LLM
+    and prompt that gave the second opinions, if one was used; they are recorded
+    in the draft beside the scene model. Returns {"saved": true, "path": ...} or
     {"saved": false, "errors": [...]} listing every broken rule.
     """
     _video_path(video_id)
@@ -219,6 +232,10 @@ def save_draft_labels(video_id: str, game_number: int, segments: list[dict]) -> 
     errors = validate_segments(
         segments, bounds["start_sec"], bounds["end_sec"], config.BOUNDS_TOLERANCE_SEC, existing_segments
     )
+    errors += check_llm_names(llm_model, llm_prompt_id)
+    produced_by = {**_scene_model_record(), "llm_model": llm_model or None, "llm_prompt_id": llm_prompt_id or None}
+    if produced_by["scene_model_sha256"] is None:
+        errors.append(f"no scene model file in {config.MODEL_DIR.name}, so the draft could not say what made it")
     if errors:
         return {"saved": False, "errors": errors}
 
@@ -231,6 +248,7 @@ def save_draft_labels(video_id: str, game_number: int, segments: list[dict]) -> 
                 "stage": bounds["stage"],
                 "start_sec": bounds["start_sec"],
                 "end_sec": bounds["end_sec"],
+                "produced_by": produced_by,  # what made this draft
                 "labels": segments,
             }
         ],

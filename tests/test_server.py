@@ -1,5 +1,6 @@
 """The server's tools, run against a tiny made-up video and game list in a temporary folder."""
 
+import hashlib
 import json
 
 import cv2
@@ -19,6 +20,10 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "VIDEO_CACHE_DIR", videos)
     monkeypatch.setattr(config, "GROUND_TRUTH_DIR", truth)
     monkeypatch.setattr(config, "OUTPUT_DIR", output)
+    model_dir = tmp_path / "test_model"
+    model_dir.mkdir()
+    (model_dir / "scene_classifier.onnx").write_bytes(b"stands in for a model file")
+    monkeypatch.setattr(config, "MODEL_DIR", model_dir)
 
     writer = cv2.VideoWriter(str(videos / f"{VIDEO_ID}.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 10, (320, 180))
     for i in range(50):  # 5 seconds
@@ -114,3 +119,33 @@ def test_merge_joins_neighbouring_frames():
 def test_predict_refuses_a_bad_sample_rate(world, bad):
     with pytest.raises(ValueError, match="sample_fps"):
         server.predict_segments(VIDEO_ID, 1, sample_fps=bad)
+
+
+def test_a_draft_records_what_produced_it(world, tmp_path, monkeypatch):
+    model_dir = tmp_path / "run_42"
+    model_dir.mkdir()
+    (model_dir / "scene_classifier.onnx").write_bytes(b"not a real model")
+    monkeypatch.setattr(config, "MODEL_DIR", model_dir)
+    server.save_draft_labels(VIDEO_ID, 1, [seg(1.0, 4.0)], llm_model="some-llm", llm_prompt_id="v1_abcd1234")
+    produced_by = json.loads((world / f"{VIDEO_ID}_g1_draft.json").read_text())["games"][0]["produced_by"]
+    assert produced_by["scene_model"] == "run_42"
+    assert produced_by["scene_model_sha256"] == hashlib.sha256(b"not a real model").hexdigest()
+    assert (produced_by["llm_model"], produced_by["llm_prompt_id"]) == ("some-llm", "v1_abcd1234")
+
+
+def test_a_draft_made_without_an_llm_says_so(world):
+    server.save_draft_labels(VIDEO_ID, 1, [seg(1.0, 4.0)])
+    produced_by = json.loads((world / f"{VIDEO_ID}_g1_draft.json").read_text())["games"][0]["produced_by"]
+    assert produced_by["llm_model"] is None and produced_by["llm_prompt_id"] is None
+
+
+def test_an_llm_name_that_is_not_an_id_is_refused(world):
+    result = server.save_draft_labels(VIDEO_ID, 1, [seg(1.0, 4.0)], llm_model="../../x")
+    assert result["saved"] is False and "llm_model" in result["errors"][0]
+    assert not (world / f"{VIDEO_ID}_g1_draft.json").exists()
+
+
+def test_a_save_is_refused_when_there_is_no_model_file_to_name(world, tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MODEL_DIR", tmp_path / "nothing_here")
+    result = server.save_draft_labels(VIDEO_ID, 1, [seg(1.0, 4.0)])
+    assert result["saved"] is False and "no scene model file" in result["errors"][0]

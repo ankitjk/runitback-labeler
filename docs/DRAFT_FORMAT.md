@@ -69,6 +69,17 @@ segment:
 `stage`, and the game's `start_sec` and `end_sec`, are copied from the
 ground-truth file's entry for that game.
 
+Each game also carries `produced_by`, which records what made the draft:
+
+| Field | Meaning |
+|---|---|
+| `scene_model` | The name of the scene model's folder |
+| `scene_model_sha256` | The SHA-256 hash of `scene_classifier.onnx`, so two models are told apart even if a folder name is reused |
+| `llm_model`, `llm_prompt_id` | The first LLM and the id of the prompt it was given, or `null` if no LLM was used |
+
+The MCP server fills in the scene model itself, from the model file in its
+model folder; the caller cannot set it.
+
 ## Checks before a draft is written
 
 Done in code inside `save_draft_labels` (`labeler/guardrails.py`). If any check
@@ -80,6 +91,8 @@ fails, nothing is written and the error names the segment and the rule.
 - segments are sorted and do not overlap
 - a segment already saved with `source: human` cannot be changed or removed by a later save
 - the file's path resolves to inside `output/`
+- the LLM's name and prompt id, if given, are plain names (letters, digits, `.`, `_`, `-`)
+- the scene model's file exists, so `produced_by` can be filled in
 
 ## Opening a draft in the GUI
 

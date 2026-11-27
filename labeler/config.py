@@ -10,14 +10,22 @@ RUNITBACK_ROOT = Path(os.environ.get("RUNITBACK_ROOT", "~/Projects/RunItBack")).
 VIDEO_CACHE_DIR = RUNITBACK_ROOT / ".video_cache"
 GROUND_TRUTH_DIR = RUNITBACK_ROOT / "data" / "scene_classifier" / "raw_labels"
 
-MODEL_DIR = REPO_ROOT / "models" / "heldout_g3"
+# The scene model's folder: scene_classifier.onnx and class_mapping.json. Set
+# LABELER_MODEL_DIR to use another model, for example a run folder written by RunItBack.
+MODEL_DIR = Path(os.environ.get("LABELER_MODEL_DIR") or REPO_ROOT / "models" / "heldout_g3").expanduser().resolve()
+MODEL_NAME = MODEL_DIR.name  # goes into report file names
 OUTPUT_DIR = Path(os.environ.get("LABELER_OUTPUT_DIR", REPO_ROOT / "output")).expanduser()
 
 DEFAULT_VIDEO_ID = "XUkRx6CpL04"
 
-# The only games the model in MODEL_DIR never trained on. The evaluation
-# refuses any other game, because scores on training games are not real scores.
-UNSEEN_GAMES = frozenset({("XUkRx6CpL04", 3)})
+# Models are known by the SHA-256 of scene_classifier.onnx, never by folder name.
+HELDOUT_G3_SHA256 = "e55632bd4f704d578b13e7f171c2a47563cd47adba10f42a1e7e28a7a31d9e96"
+
+# The games a model never trained on. The evaluation refuses any other game,
+# because scores on training games are not real scores. This table is checked
+# first. Only a model that is not in it is looked up in the run record that
+# RunItBack writes beside a model (run.json). A model in neither has no unseen games.
+UNSEEN_GAMES_BY_MODEL = {HELDOUT_G3_SHA256: frozenset({("XUkRx6CpL04", 3)})}
 
 SAMPLE_FPS = 2
 
@@ -26,6 +34,11 @@ SAMPLE_FPS = 2
 # is trusted for 11 of 218 segments (15.0% of game time, 5.4% of it wrong); at
 # 0.35 the error is 12.7%. Chosen and measured on the same game, so optimistic.
 CONFIDENCE_THRESHOLD = 0.40
+
+# A threshold holds only for the model it was measured on. A model that is not
+# listed here has no threshold, so nothing is accepted on its word alone.
+# (The 2026-11-26 RunItBack baseline at 0.40: 8 segments accepted, 44.4% of that time wrong.)
+THRESHOLD_BY_MODEL = {HELDOUT_G3_SHA256: CONFIDENCE_THRESHOLD}
 
 # The model predicts these about 5x too often, so its word alone is never enough.
 NEVER_AUTO_ACCEPT = frozenset({"respawning", "one_on_ledge"})

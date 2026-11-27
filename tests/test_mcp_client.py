@@ -21,6 +21,10 @@ def world(tmp_path, monkeypatch):
     truth.mkdir(parents=True)
     monkeypatch.setattr(config, "RUNITBACK_ROOT", root)
     monkeypatch.setattr(config, "OUTPUT_DIR", output)
+    model_dir = tmp_path / "test_model"
+    model_dir.mkdir()
+    (model_dir / "scene_classifier.onnx").write_bytes(b"stands in for a model file")
+    monkeypatch.setattr(config, "MODEL_DIR", model_dir)
 
     writer = cv2.VideoWriter(str(videos / f"{VIDEO_ID}.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 10, (320, 180))
     for i in range(50):

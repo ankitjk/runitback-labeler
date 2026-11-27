@@ -128,6 +128,17 @@ action (which frame to look at) in a loop. Everything around it is fixed.
     Free-tier content is used by Google to improve its products. Answers are
     cached per model, so changing model needs no code change. The limits and
     "busy" replies above were observed during the runs, not recorded in a file.
+15. **The scene model is a setting** (`LABELER_MODEL_DIR`, default
+    `models/heldout_g3`), added 2026-11-27. A model is identified by the
+    SHA-256 of its file, never by its folder's name. Two things follow the
+    model, in code: the games it may be scored on (the table in `config.py`
+    first; for an unlisted model, the `run.json` RunItBack writes beside it;
+    otherwise none), and the confidence threshold (measured per model; a model
+    with none is never trusted on its word alone). Report names carry the
+    model's name.
+16. **Each draft records what produced it** (`produced_by` on the game: the
+    scene model's name and file hash, the LLM and its prompt id). The MCP
+    server fills in the scene model itself. Details in `docs/DRAFT_FORMAT.md`.
 
 ## Layout
 
@@ -201,6 +212,9 @@ time runs out, see "Cut lines" below.
   - **human segments are kept:** if a draft already exists, every segment in it
     with `source: human` must appear unchanged in the new one
   - the output path must resolve to a file inside `output/`
+  - the LLM's name and prompt id, if given, are plain names (decision 16)
+  - the scene model's file exists, so the draft can say what made it (this one
+    is checked in `server.py`, which knows the model folder)
   - on failure nothing is written, and the result lists **every** broken rule,
     naming the segment: `segment 12 (512.0-513.5): class 'finishing_blow' is
     not one of the 11 classes`
