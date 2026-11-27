@@ -353,6 +353,15 @@ and next steps. Every number comes from a file in `output/eval/`.
 
 ## Results so far (game 3, measured 2026-11-24)
 
+**Stale since 2026-11-25:** the GAME! screen was relabelled from `non_gameplay`
+to `respawning` in the ground truth (4.05 s of game 3). Model-only re-measured
+on 2026-11-26 against the new labels: 36.9% accuracy, ceiling 81.3% at 2 fps
+and 88.2% at 4 fps; `respawning` precision 28.6% (was 20.6%); 37.5% at the
+sampled frames (was 36.3%); at threshold 0.40 still 11 segments accepted, 5.4%
+wrong.
+The LLM numbers below are from the old labels and old prompt and are not
+re-measured. The model was trained on the old labels.
+
 Full tables are in `output/eval/` (regenerate with
 `uv run python -m labeler.evaluate --game 3`, and `--fps 4` for the 4 fps
 report).
@@ -361,7 +370,8 @@ report).
   frames; `test_metrics.json` reports 39.2% on 490 frames taken from inside
   segments).
 - Segmentation ceiling at 2 frames per second: **81.3%**. At 4 frames per
-  second it is 88.3%, with 421 segments instead of 218 (twice the LLM calls).
+  second it is 88.2% (re-measured 2026-11-26; the earlier report read 88.3% and
+  was overwritten), with 421 segments instead of 218 (twice the LLM calls).
   Sampling stays at 2 for now; revisit after step 5 shows the LLM's cost.
 - Threshold **0.40**: the model alone is trusted for 11 of 218 segments, 15.0%
   of game time, 5.4% of it wrong. 25 of those 31 seconds are the opening

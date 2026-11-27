@@ -100,6 +100,16 @@ The small model was trained on games 1 and 2 only, so game 3 is the one game
 it has never seen. The evaluation refuses to score any other game. Each draft
 is compared with the hand labels every 0.1 s of game time (2,091 points).
 
+**These results predate a label change.** On 2026-11-25 the GAME! screen at
+the end of each game was relabelled from `non_gameplay` to `respawning`, to
+match the written class definitions (4.05 s of game 3). Every number below was
+measured against the labels before that change. The model-only numbers were
+re-measured on 2026-11-26 against the new labels: accuracy 36.9% (was 35.7%),
+segmentation ceiling 81.3% (81.3% before and after, to one decimal), 88.2% at
+4 frames per second, and `respawning` precision 28.6% (was 20.6%). The LLM numbers have **not** been re-measured, so the tables below
+keep the older, consistent set. The small model was trained before the change,
+so it still learned GAME! as `non_gameplay`.
+
 ### The small model alone
 
 | Measure | Value |
@@ -112,7 +122,9 @@ is compared with the hand labels every 0.1 s of game time (2,091 points).
 
 The ceiling exists because a segment carries one label, and the model's
 segments are cut on a 0.5 s grid while real scene changes fall anywhere.
-Sampling 4 frames per second raises it to 88.3%, with twice the segments.
+Sampling 4 frames per second raises it to 88.2% (re-measured 2026-11-26 on the
+new labels; the earlier 4 fps report read 88.3% and was overwritten), with
+twice the segments.
 
 ### With the LLM's second opinion
 
@@ -152,9 +164,9 @@ What this shows:
   optimistic, rests on 11 segments, and needs a second unseen video to confirm.
 - **Errors are counted by time**, so they include boundary error: 18.7% of
   game time cannot be right with these segments whatever label they get.
-- **The LLM results are from before one sentence was added to the
-  `non_gameplay` definition** (the countdown before GO!). They have not been
-  re-measured with it.
+- **The LLM results are from before two changes**: one sentence added to the
+  `non_gameplay` definition (the countdown before GO!), and the GAME! screen
+  relabelled as `respawning`. They have not been re-measured with either.
 - **The human step was run but not measured.** It pauses, takes answers,
   resumes and stops at the cap; how much a person's 10 answers improve a
   draft was not scored.
